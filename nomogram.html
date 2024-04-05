@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Nomogram Calculator</title>
+  <link rel="stylesheet" href="nomogram.css">
+  <script src="https://cdn.jsdelivr.net/npm/d3@6.7.0/dist/d3.min.js"></script>
+  <style>
+    .axis path, .axis line {
+      fill: none;
+      stroke: #000;
+      shape-rendering: crispEdges;
+    }
+    .axis text {
+      font-size: 12px;
+    }
+    .line {
+      fill: none;
+      stroke: steelblue;
+      stroke-width: 2px;
+    }
+    .axis-label {
+      font-size: 14px;
+      text-anchor: middle;
+    }
+    .points {
+      fill: steelblue;
+    }
+    .container {
+      display: flex;
+    }
+    .input-container {
+      flex: 1;
+      padding: 20px;
+    }
+    .nomogram-container {
+      flex: 2;
+      padding: 20px;
+    }
+ 
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="input-container">
+      <h2>Dynamic Nomogram</h2>
+      <label for="input1">lbp_3D_m2_glszm_SmallAreaEmphasis:</label>
+      <input type="number" id="input1" step="0.1"><br>
+      <label for="input2">log_sigma_1_0_mm_3D_glcm_JointEntropy:</label>
+      <input type="number" id="input2" step="0.1"><br>
+      <label for="input3">wavelet_HHH_glszm_HighGrayLevelZoneEmphasis:</label>
+      <input type="number" id="input3" step="0.1"><br>
+      <button onclick="calculateNomogram()">Calculate</button>
+      <br><br>
+      <div id="result"></div>
+    </div>
+    <div class="nomogram-container">
+      <h2>95% confidence interval</h2>
+      <div id="nomogram"></div>
+    <div class="model-container">
+        <h2>Model Summary</h2>
+      <div id="modeltxt"></div>
+    </div>
+  </div>
+
+  <script>
+    function calculateNomogram() {
+      const input1 = parseFloat(document.getElementById('input1').value);
+      const input2 = parseFloat(document.getElementById('input2').value);
+      const input3 = parseFloat(document.getElementById('input3').value);
+      
+      // 模型系数和标准误差
+      const coefficients = [0.255307943, 1.032080456, 0.673541304, 0.163653242];
+      const stdErrors = [0.1, 0.2, 0.15, 0.1]; // 示例标准误差,请替换为实际值
+
+      // Sigmoid 函数
+      function sigmoid(x) {
+        return 1 / (1 + Math.exp(-x));
+      }
+
+      // 计算线性预测值
+      const linearPredictor = coefficients[0] + input1 * coefficients[1] + input2 * coefficients[2] + input3 * coefficients[3];
+      const result = sigmoid(linearPredictor);
+
+      document.getElementById('result').textContent = 'Probability: ' + (result * 100).toFixed(2) + '%';
+
+      // 更新model-container中的内容
+      document.getElementById('modeltxt').innerHTML = 
+        `Probability = sigmoid(${coefficients[0]} + ${input1} * ${coefficients[1]} + ${input2} * ${coefficients[2]} + ${input3} * ${coefficients[3]})`;
+
+      // 计算置信区间
+      const zScore = 1.96; // 95%置信区间的z-score
+      const ciLow = sigmoid(linearPredictor - zScore * Math.sqrt(
+        Math.pow(input1 * stdErrors[1], 2) + Math.pow(input2 * stdErrors[2], 2) + Math.pow(input3 * stdErrors[3], 2)
+      ));
+      const ciHigh = sigmoid(linearPredictor + zScore * Math.sqrt(
+        Math.pow(input1 * stdErrors[1], 2) + Math.pow(input2 * stdErrors[2], 2) + Math.pow(input3 * stdErrors[3], 2)
+      ));
+      document.getElementById('modeltxt').innerHTML += `<br>Result: ${(result * 100).toFixed(2)}%<br>
+                                                   95% CI: [${(ciLow * 100).toFixed(2)}%, ${(ciHigh * 100).toFixed(2)}%]`;
+  
+                                                   
+      drawNomogram(result, ciLow, ciHigh);
+    }
+
+    function drawNomogram(result, ciLow, ciHigh) {
+      const width = 500;
+      const height = 200;
+      const margin = { top: 50, right: 50, bottom: 50, left: 50 };
+
+      const svg = d3.select('#nomogram')
+        .html('')
+        .append('svg')
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom)
+        .append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const xScale = d3.scaleLinear()
+        .domain([0, 1])
+        .range([0, width]);
+
+      const xAxis = d3.axisBottom(xScale)
+        .tickFormat(d3.format('.0%'));
+
+      svg.append('g')
+        .attr('class', 'x axis')
+        .attr('transform', `translate(0,${height})`)
+        .call(xAxis);
+
+      svg.append('text')
+        .attr('class', 'axis-label')
+        .attr('x', width / 2)
+        .attr('y', height + margin.bottom - 5)
+        .text('Probability');
+
+      svg.append('line')
+        .attr('x1', xScale(ciLow))
+        .attr('y1', height / 2)
+        .attr('x2', xScale(ciHigh))
+        .attr('y2', height / 2)
+        .attr('stroke', 'steelblue')
+        .attr('stroke-width', 3);
+
+      // 绘制CI低端的竖直短线
+      svg.append('line')
+        .attr('x1', xScale(ciLow))
+        .attr('y1', height / 2 - 5) // 短线的起点稍微高于CI线
+        .attr('x2', xScale(ciLow))
+        .attr('y2', height / 2 + 5) // 短线的终点稍微低于CI线
+        .attr('stroke', 'steelblue')
+        .attr('stroke-width', 3);
+
+      // 绘制CI高端的竖直短线
+      svg.append('line')
+        .attr('x1', xScale(ciHigh))
+        .attr('y1', height / 2 - 5) // 短线的起点稍微高于CI线
+        .attr('x2', xScale(ciHigh))
+        .attr('y2', height / 2 + 5) // 短线的终点稍微低于CI线
+        .attr('stroke', 'steelblue')
+        .attr('stroke-width', 3);
+
+      svg.append('rect')
+        .attr('x', xScale(result) - 8) // 减去一半的宽度以使其居中
+        .attr('y', height / 2 - 8) // 减去一半的高度以使其居中
+        .attr('width', 6) // 方块的宽度
+        .attr('height', 16) // 方块的高度
+        .attr('fill', 'steelblue'); // 设置方块的填充颜色
+
+
+    }
+    function updateModelText(result, ciLow, ciHigh) {
+      const modelText = `Result: ${(result * 100).toFixed(2)}%<br>
+                         95% CI: [${(ciLow * 100).toFixed(2)}%, ${(ciHigh * 100).toFixed(2)}%]`;
+      document.getElementById('modeltxt').innerHTML = modelText;
+    }
+  </script>
+</body>
+</html>
